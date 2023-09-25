@@ -1,0 +1,94 @@
+name: $(Date:yyyy.MM.dd)$(Rev:.rr)
+parameters:
+- name: SolutionName
+  displayName: Solution Name
+  default: 
+  type: string
+  values:
+    - Seedling
+- name: Comment
+  displayName: Check-in Comment 
+  default: 
+  type: string
+variables:
+- name: SolutionName
+  value:  ${{ parameters.SolutionName }}
+trigger: none
+jobs:
+- job: Job_1
+  displayName: Agent job 1
+  pool:
+    vmImage: windows-latest
+  steps:
+  - checkout: self
+    persistCredentials: True
+
+  - task: PowerPlatformToolInstaller@2
+    displayName: 'Power Platform Tool Installer'
+  
+  - task: PowerPlatformSetSolutionVersion@2
+    inputs:
+      authenticationType: 'PowerPlatformSPN'
+      PowerPlatformSPN: '<service principal>'
+      SolutionName: '$(SolutionName)'
+      SolutionVersionNumber: '$(Build.BuildNumber)'
+
+  - task: PowerPlatformPublishCustomizations@2
+    inputs:
+      authenticationType: 'PowerPlatformSPN'
+      PowerPlatformSPN: '<service principal>'
+  - task: PowerPlatformExportSolution@2
+    displayName: 'Power Platform Export Solution'
+    inputs:
+      authenticationType: 'PowerPlatformSPN'
+      PowerPlatformSPN: '<service principal>'
+      SolutionName: '$(SolutionName)'
+      SolutionOutputFile: '$(Build.ArtifactStagingDirectory)\$(SolutionName).zip'
+      AsyncOperation: true
+      MaxAsyncWaitTime: '60'
+  - task: PowerPlatformExportSolution@2
+    displayName: 'Power Platform Export Solution - Managed'
+    inputs:
+      authenticationType: 'PowerPlatformSPN'
+      PowerPlatformSPN: '<service principal>'
+      SolutionName: '$(SolutionName)'
+      SolutionOutputFile: '$(Build.ArtifactStagingDirectory)\$(SolutionName)_managed.zip'
+      AsyncOperation: true
+      MaxAsyncWaitTime: '60'
+      Managed: true
+  - task: CopyFiles@2
+    inputs:
+      SourceFolder: 'settings'
+      Contents: '**'
+      TargetFolder: '$(Build.ArtifactStagingDirectory)\Settings'
+  - task: PowerPlatformUnpackSolution@2
+    displayName: 'Power Platform Unpack Solution'
+    inputs:
+      SolutionInputFile: '$(Build.ArtifactStagingDirectory)\$(SolutionName).zip'
+      SolutionTargetFolder: '$(Build.SourcesDirectory)\$(SolutionName)'
+  - task: CmdLine@2
+    displayName: Commit Solution
+    inputs:
+      script: >
+        echo commit all changes
+
+        echo replace user.email with parameter
+
+        git config user.email "$(Build.RequestedForEmail)"
+
+        git config user.name "$(Build.RequestedFor)"
+
+        git checkout main
+
+        git add --all
+
+        git commit -m "${{ parameters.Comment }}"
+
+        echo push code to new repo
+
+        git -c http.extraheader="AUTHORIZATION: bearer $(System.AccessToken)" push origin main
+
+        echo done
+
+  - task: PublishBuildArtifacts@1
+    displayName: 'Publish Artifact: drop'
